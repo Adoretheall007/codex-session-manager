@@ -21,7 +21,7 @@ body,
 }
 
 body {
-  min-width: 1200px;
+  min-width: 0;
 }
 
 button,
@@ -36,6 +36,9 @@ button {
 .app-shell {
   display: flex;
   min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(201, 168, 104, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(7, 11, 15, 0.92), rgba(9, 14, 18, 0.98));
 }
 
 .gate-shell {
@@ -103,10 +106,10 @@ button {
 }
 
 .sidebar {
-  width: 380px;
+  width: 360px;
   flex-shrink: 0;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(11, 17, 21, 0.82);
+  background: rgba(9, 14, 18, 0.9);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
@@ -156,17 +159,18 @@ button {
 .session-card {
   width: 100%;
   text-align: left;
-  padding: 16px;
+  padding: 16px 16px 14px;
   margin-bottom: 12px;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.025);
   color: inherit;
 }
 
 .session-card.selected {
   border-color: rgba(214, 170, 102, 0.48);
-  background: rgba(214, 170, 102, 0.08);
+  background: rgba(214, 170, 102, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(214, 170, 102, 0.08);
 }
 
 .session-card-top {
@@ -203,6 +207,8 @@ button {
   flex: 1;
   flex-direction: column;
   min-width: 0;
+  background:
+    linear-gradient(180deg, rgba(14, 21, 26, 0.9), rgba(8, 13, 17, 0.96));
 }
 
 .top-bar {
@@ -235,7 +241,7 @@ button {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding: 24px;
+  padding: 24px 28px 18px;
 }
 
 .detail-header h2 {
@@ -267,52 +273,128 @@ button {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 24px 24px;
+  padding: 0 28px 36px;
+}
+
+.turn-section {
+  margin-bottom: 26px;
+}
+
+.turn-stack {
+  display: grid;
+  gap: 14px;
 }
 
 .turn-divider {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  margin: 8px 0;
-  border-left: 3px solid #d6aa66;
+  width: fit-content;
+  margin: 8px auto 16px;
+  padding: 8px 14px;
+  border: 1px solid rgba(214, 170, 102, 0.22);
   background: rgba(214, 170, 102, 0.08);
-  border-radius: 14px;
+  border-radius: 999px;
 }
 
+.turn-divider strong,
 .turn-divider span {
   color: #d5d0bf;
   font-size: 12px;
 }
 
-.timeline-entry {
-  margin: 12px 0;
+.chat-message {
+  display: flex;
+}
+
+.chat-user {
+  justify-content: flex-end;
+}
+
+.chat-assistant {
+  justify-content: flex-start;
+}
+
+.chat-card {
+  width: min(860px, 84%);
+  padding: 14px 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+}
+
+.chat-user .chat-card {
+  background: linear-gradient(180deg, rgba(36, 67, 83, 0.9), rgba(28, 51, 64, 0.95));
+}
+
+.chat-assistant .chat-card {
+  background: linear-gradient(180deg, rgba(24, 31, 38, 0.96), rgba(18, 24, 31, 0.98));
+}
+
+.chat-card-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.chat-role {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f3ebdb;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chat-time {
+  color: #a4b2ad;
+  font-size: 12px;
+}
+
+.chat-body {
+  color: #f0ede3;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.72;
+  font-size: 14px;
+}
+
+.folded-entry {
+  width: min(860px, 100%);
+  margin: 0 auto;
   border-radius: 18px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.03);
 }
 
-.entry-header {
+.folded-entry-toggle {
   width: 100%;
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   border: 0;
   background: transparent;
   color: inherit;
-  padding: 16px 18px 12px;
+  padding: 14px 16px;
   text-align: left;
 }
 
-.entry-header p {
+.folded-entry-main p {
   margin: 6px 0 0;
   color: #bcc5bf;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.entry-meta {
+.folded-entry-meta {
+  flex-shrink: 0;
   text-align: right;
   color: #98a6a1;
   font-size: 12px;
@@ -320,18 +402,11 @@ button {
   gap: 6px;
 }
 
-.entry-preview {
-  padding: 0 18px 16px;
-  color: #d8ddd4;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.entry-details {
+.folded-entry-details {
   margin: 0;
-  padding: 18px;
+  padding: 16px 18px 18px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.18);
+  background: rgba(0, 0, 0, 0.22);
   color: #f0efe8;
   white-space: pre-wrap;
   word-break: break-word;
@@ -342,11 +417,11 @@ button {
 }
 
 .kind-user {
-  border-color: rgba(127, 182, 224, 0.25);
+  border-color: rgba(127, 182, 224, 0.28);
 }
 
 .kind-assistant {
-  border-color: rgba(115, 182, 151, 0.25);
+  border-color: rgba(115, 182, 151, 0.24);
 }
 
 .kind-system,
@@ -368,4 +443,22 @@ button {
 
 .kind-event {
   border-color: rgba(94, 167, 185, 0.25);
+}
+
+@media (max-width: 1200px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    min-height: auto;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .chat-card,
+  .folded-entry {
+    width: 100%;
+  }
 }

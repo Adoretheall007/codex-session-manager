@@ -1,5 +1,4 @@
-import { useMemo, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useState } from "react";
 import { formatCount, formatDateLabel } from "../lib/format";
 import type { SessionDetails, TimelineEntry } from "../types";
 
@@ -8,10 +7,6 @@ type TimelineViewProps = {
   loading: boolean;
   error: string | null;
 };
-
-type Row =
-  | { type: "turn"; id: string; title: string; startedAt: string }
-  | { type: "entry"; id: string; entry: TimelineEntry };
 
 function kindClass(kind: TimelineEntry["kind"]): string {
   switch (kind) {
@@ -36,59 +31,60 @@ function kindClass(kind: TimelineEntry["kind"]): string {
   }
 }
 
-function EntryCard({ entry }: { entry: TimelineEntry }) {
-  const [expanded, setExpanded] = useState(!entry.collapsedByDefault);
+function isConversationEntry(entry: TimelineEntry) {
+  return entry.kind === "user_message" || entry.kind === "assistant_message";
+}
+
+function roleLabel(entry: TimelineEntry) {
+  if (entry.kind === "user_message") {
+    return "用户";
+  }
+  if (entry.kind === "assistant_message") {
+    return "Codex";
+  }
+  return entry.title;
+}
+
+function ConversationMessage({ entry }: { entry: TimelineEntry }) {
+  const sideClass = entry.kind === "user_message" ? "chat-user" : "chat-assistant";
+  const body = entry.details || entry.preview || entry.summary || "空消息";
+
   return (
-    <section className={`timeline-entry ${kindClass(entry.kind)}`}>
-      <button className="entry-header" onClick={() => setExpanded((value) => !value)}>
-        <div>
-          <strong>{entry.title}</strong>
-          <p>{entry.summary}</p>
+    <article className={`chat-message ${sideClass}`}>
+      <div className={`chat-card ${kindClass(entry.kind)}`}>
+        <div className="chat-card-meta">
+          <span className="chat-role">{roleLabel(entry)}</span>
+          <span className="chat-time">{formatDateLabel(entry.timestamp)}</span>
         </div>
-        <div className="entry-meta">
+        <div className="chat-body">{body}</div>
+      </div>
+    </article>
+  );
+}
+
+function FoldedEntry({ entry }: { entry: TimelineEntry }) {
+  const [expanded, setExpanded] = useState(false);
+  const summary = entry.summary || entry.preview || "无摘要";
+  const details = entry.details || entry.preview || "无详细内容";
+
+  return (
+    <section className={`folded-entry ${kindClass(entry.kind)}${expanded ? " expanded" : ""}`}>
+      <button className="folded-entry-toggle" onClick={() => setExpanded((value) => !value)}>
+        <div className="folded-entry-main">
+          <strong>{entry.title}</strong>
+          <p>{summary}</p>
+        </div>
+        <div className="folded-entry-meta">
           <span>{formatDateLabel(entry.timestamp)}</span>
-          <span>{expanded ? "收起" : "展开"}</span>
+          <span>{expanded ? "收起详情" : "展开详情"}</span>
         </div>
       </button>
-      <div className="entry-preview">{entry.preview || "无预览"}</div>
-      {expanded ? <pre className="entry-details">{entry.details || "无详细内容"}</pre> : null}
+      {expanded ? <pre className="folded-entry-details">{details}</pre> : null}
     </section>
   );
 }
 
 export function TimelineView(props: TimelineViewProps) {
-  const parentRef = useRef<HTMLDivElement | null>(null);
-
-  const rows = useMemo<Row[]>(() => {
-    if (!props.details) {
-      return [];
-    }
-    const nextRows: Row[] = [];
-    for (const turn of props.details.turns) {
-      nextRows.push({
-        type: "turn",
-        id: `turn-${turn.id}`,
-        title: turn.label,
-        startedAt: turn.startedAt
-      });
-      for (const entry of turn.entries) {
-        nextRows.push({
-          type: "entry",
-          id: entry.id,
-          entry
-        });
-      }
-    }
-    return nextRows;
-  }, [props.details]);
-
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: (index) => (rows[index]?.type === "turn" ? 56 : 180),
-    overscan: 8
-  });
-
   if (props.loading) {
     return (
       <main className="main-panel centered-panel">
@@ -122,44 +118,30 @@ export function TimelineView(props: TimelineViewProps) {
         </div>
         <div className="detail-stats">
           <span>{formatCount(props.details.summary.turnCount)} 轮</span>
-          <span>{formatCount(props.details.totalEntries)} 条时间线</span>
+          <span>{formatCount(props.details.summary.messageCount)} 条对话</span>
+          <span>{formatCount(props.details.totalEntries)} 条总记录</span>
           <span>{props.details.summary.model || "未知模型"}</span>
         </div>
       </header>
 
-      <div className="timeline-scroll" ref={parentRef}>
-        <div
-          style={{
-            height: `${virtualizer.getTotalSize()}px`,
-            position: "relative",
-            width: "100%"
-          }}
-        >
-          {virtualizer.getVirtualItems().map((virtualRow) => {
-            const row = rows[virtualRow.index];
-            return (
-              <div
-                key={row.id}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtualRow.start}px)`
-                }}
-              >
-                {row.type === "turn" ? (
-                  <div className="turn-divider">
-                    <strong>{row.title}</strong>
-                    <span>{formatDateLabel(row.startedAt)}</span>
-                  </div>
+      <div className="timeline-scroll">
+        {props.details.turns.map((turn) => (
+          <section className="turn-section" key={turn.id}>
+            <div className="turn-divider">
+              <strong>{turn.label}</strong>
+              <span>{formatDateLabel(turn.startedAt)}</span>
+            </div>
+            <div className="turn-stack">
+              {turn.entries.map((entry) =>
+                isConversationEntry(entry) ? (
+                  <ConversationMessage entry={entry} key={entry.id} />
                 ) : (
-                  <EntryCard entry={row.entry} />
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  <FoldedEntry entry={entry} key={entry.id} />
+                )
+              )}
+            </div>
+          </section>
+        ))}
       </div>
     </main>
   );
