@@ -326,11 +326,21 @@ button {
 }
 
 .chat-user .chat-card {
-  background: linear-gradient(180deg, rgba(36, 67, 83, 0.9), rgba(28, 51, 64, 0.95));
+  border-color: rgba(122, 201, 255, 0.48);
+  background:
+    linear-gradient(180deg, rgba(40, 86, 112, 0.96), rgba(25, 59, 79, 0.98));
+  box-shadow:
+    0 18px 42px rgba(10, 34, 49, 0.34),
+    inset 0 0 0 1px rgba(167, 222, 255, 0.08);
 }
 
 .chat-assistant .chat-card {
-  background: linear-gradient(180deg, rgba(24, 31, 38, 0.96), rgba(18, 24, 31, 0.98));
+  border-color: rgba(214, 170, 102, 0.28);
+  background:
+    linear-gradient(180deg, rgba(26, 31, 36, 0.98), rgba(17, 22, 27, 1));
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1px rgba(214, 170, 102, 0.06);
 }
 
 .chat-card-meta {
@@ -344,12 +354,23 @@ button {
 .chat-role {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: 5px 11px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   color: #f3ebdb;
   font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.chat-user .chat-role {
+  background: rgba(167, 222, 255, 0.16);
+  color: #eef8ff;
+}
+
+.chat-assistant .chat-role {
+  background: rgba(214, 170, 102, 0.14);
+  color: #f6ead3;
 }
 
 .chat-time {
@@ -358,23 +379,23 @@ button {
 }
 
 .chat-body {
-  color: #f0ede3;
+  color: #f7f4ec;
   white-space: pre-wrap;
   word-break: break-word;
-  line-height: 1.72;
-  font-size: 14px;
+  line-height: 1.78;
+  font-size: 15px;
 }
 
 .chat-inline-stack {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   margin-top: 12px;
 }
 
 .inline-fold {
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.04);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
   overflow: hidden;
 }
 
@@ -382,42 +403,50 @@ button {
   width: 100%;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 14px;
   border: 0;
   background: transparent;
   color: inherit;
-  padding: 12px 14px;
+  min-height: 42px;
+  padding: 9px 12px;
   text-align: left;
 }
 
 .inline-fold-head {
   min-width: 0;
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .inline-fold-label {
   color: #eef0ea;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: lowercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .inline-fold-summary {
   color: #bcc5bf;
-  font-size: 13px;
-  white-space: pre-wrap;
-  word-break: break-word;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .inline-fold-meta {
   flex-shrink: 0;
   text-align: right;
   color: #98a6a1;
-  font-size: 12px;
+  font-size: 11px;
   display: grid;
-  gap: 6px;
+  gap: 2px;
 }
 
 .inline-fold-details {
@@ -451,16 +480,38 @@ button {
   border-color: rgba(214, 170, 102, 0.3);
 }
 
+.kind-tool .inline-fold-label {
+  background: rgba(214, 170, 102, 0.16);
+  color: #f8e4bf;
+}
+
 .kind-output {
   border-color: rgba(165, 126, 214, 0.25);
+}
+
+.kind-output .inline-fold-label {
+  background: rgba(165, 126, 214, 0.16);
+  color: #eadbff;
 }
 
 .kind-reasoning {
   border-color: rgba(224, 130, 130, 0.22);
 }
 
+.kind-reasoning .inline-fold-label {
+  background: rgba(224, 130, 130, 0.16);
+  color: #ffdede;
+}
+
 .kind-event {
   border-color: rgba(94, 167, 185, 0.25);
+}
+
+.kind-event .inline-fold-label,
+.kind-meta .inline-fold-label,
+.kind-system .inline-fold-label {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e5ebe8;
 }
 
 @media (max-width: 1200px) {
@@ -476,7 +527,22 @@ button {
   }
 
   .chat-card,
-  .folded-entry {
+  .inline-fold {
     width: 100%;
+  }
+
+  .inline-fold-toggle {
+    align-items: flex-start;
+  }
+
+  .inline-fold-head {
+    display: grid;
+    gap: 4px;
+  }
+
+  .inline-fold-summary {
+    white-space: pre-wrap;
+    overflow: visible;
+    text-overflow: clip;
   }
 }
