@@ -50,16 +50,6 @@ export type TurnGroup = {
   entries: TimelineEntry[];
 };
 
-export type TimelineMessageGroup = {
-  id: string;
-  kind: "user_message" | "assistant_message" | "system_message";
-  title: string;
-  timestamp: string;
-  body: string;
-  entries: TimelineEntry[];
-  collapsedEntries: TimelineEntry[];
-};
-
 export type SessionDetails = {
   summary: SessionSummary;
   turns: TurnGroup[];

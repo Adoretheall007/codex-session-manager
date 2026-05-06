@@ -425,6 +425,21 @@ button {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.inline-fold-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e7eb;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
 .inline-fold-summary {
   color: #b4b4be;
   font-size: 12px;
@@ -460,6 +475,42 @@ button {
   font-size: 12px;
   max-height: 420px;
   overflow: auto;
+}
+
+.grouped-fold-details {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.grouped-fold-entry + .grouped-fold-entry {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.grouped-fold-entry-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px 0;
+  color: #9ca3af;
+  font-size: 11px;
+}
+
+.grouped-fold-entry-index {
+  color: #d1d5db;
+  font-weight: 700;
+}
+
+.grouped-fold-entry-summary {
+  padding: 6px 16px 0;
+  color: #d1d5db;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.grouped-fold-entry-body {
+  border-top: 0;
+  background: transparent;
+  max-height: none;
 }
 
 .kind-user {

@@ -1,11 +1,27 @@
 import { useState } from "react";
 import { formatCount, formatDateLabel } from "../lib/format";
-import type { SessionDetails, TimelineEntry, TimelineMessageGroup, TimelineKind } from "../types";
+import type { SessionDetails, TimelineEntry } from "../types";
 
 type TimelineViewProps = {
   details: SessionDetails | null;
   loading: boolean;
   error: string | null;
+};
+
+type DisplayItem = {
+  type: "message" | "fold_group";
+  id: string;
+  kind: TimelineEntry["kind"];
+  label: string;
+  timestamp: string;
+  summary: string;
+  details: string;
+  entries?: Array<{
+    id: string;
+    timestamp: string;
+    summary: string;
+    details: string;
+  }>;
 };
 
 function kindClass(kind: TimelineEntry["kind"]): string {
@@ -31,79 +47,101 @@ function kindClass(kind: TimelineEntry["kind"]): string {
   }
 }
 
-function isMessageKind(kind: TimelineKind): kind is TimelineMessageGroup["kind"] {
-  return kind === "user_message" || kind === "assistant_message" || kind === "system_message";
-}
-
-function roleLabel(group: TimelineMessageGroup) {
-  if (group.kind === "user_message") {
+function roleLabel(entry: TimelineEntry) {
+  if (entry.kind === "user_message") {
     return "用户";
   }
-  if (group.kind === "assistant_message") {
+  if (entry.kind === "assistant_message") {
     return "Codex";
-  }
-  return group.title;
-}
-
-function foldedLabel(entry: TimelineEntry) {
-  if (entry.kind === "reasoning_group") {
-    return "thinking";
-  }
-  if (entry.kind === "tool_call_group") {
-    return entry.toolName ? `tool · ${entry.toolName}` : "tool call";
-  }
-  if (entry.kind === "tool_output_group") {
-    return entry.toolName ? `tool output · ${entry.toolName}` : "tool output";
-  }
-  if (entry.kind === "event") {
-    return "event";
-  }
-  if (entry.kind === "meta") {
-    return "meta";
   }
   return entry.title;
 }
 
-function buildMessageGroups(details: SessionDetails): Array<{
+function foldedLabel(entry: TimelineEntry) {
+  if (entry.rawType === "turn_context") {
+    return "Turn Context";
+  }
+  if (entry.kind === "reasoning_group") {
+    return "Thinking";
+  }
+  if (entry.kind === "tool_call_group") {
+    return entry.toolName ? `Tool · ${entry.toolName}` : "Tool Call";
+  }
+  if (entry.kind === "tool_output_group") {
+    return entry.toolName ? `Tool Output · ${entry.toolName}` : "Tool Output";
+  }
+  if (entry.kind === "event") {
+    return "event_msg";
+  }
+  if (entry.kind === "meta") {
+    return entry.title;
+  }
+  return entry.title;
+}
+
+function buildDisplayItems(details: SessionDetails): Array<{
   turnId: string;
   turnLabel: string;
   turnStartedAt: string;
-  groups: TimelineMessageGroup[];
+  items: DisplayItem[];
 }> {
   return details.turns.map((turn) => {
-    const groups: TimelineMessageGroup[] = [];
-    let assistantBuffer: TimelineMessageGroup | null = null;
+    const items: DisplayItem[] = [];
 
     for (const entry of turn.entries) {
-      if (isMessageKind(entry.kind)) {
-        const nextGroup: TimelineMessageGroup = {
-          id: `group-${entry.id}`,
+      if (entry.kind === "user_message" || entry.kind === "assistant_message") {
+        items.push({
+          type: "message",
+          id: `item-${entry.id}`,
           kind: entry.kind,
-          title: entry.title,
+          label: roleLabel(entry),
           timestamp: entry.timestamp,
-          body: entry.details || entry.preview || entry.summary || "空消息",
-          entries: [entry],
-          collapsedEntries: []
-        };
-        groups.push(nextGroup);
-        assistantBuffer = entry.kind === "assistant_message" ? nextGroup : null;
+          summary: entry.summary || entry.preview || "无摘要",
+          details: entry.details || entry.preview || "无详细内容"
+        });
         continue;
       }
 
-      if (assistantBuffer) {
-        assistantBuffer.entries.push(entry);
-        assistantBuffer.collapsedEntries.push(entry);
+      const label = foldedLabel(entry);
+      const summary = entry.summary || entry.preview || "无摘要";
+      const details = entry.details || entry.preview || "无详细内容";
+      const lastItem = items.at(-1);
+
+      if (
+        lastItem &&
+        lastItem.type === "fold_group" &&
+        lastItem.kind === entry.kind &&
+        lastItem.label === label &&
+        lastItem.entries
+      ) {
+        lastItem.entries.push({
+          id: entry.id,
+          timestamp: entry.timestamp,
+          summary,
+          details
+        });
+        lastItem.summary =
+          lastItem.entries.length === 1 ? lastItem.entries[0].summary : `${lastItem.entries.length} 条同类记录`;
+        lastItem.details = lastItem.entries.map((item) => item.details).join("\n\n");
         continue;
       }
 
-      groups.push({
-        id: `group-${entry.id}`,
-        kind: "system_message",
-        title: entry.title,
+      items.push({
+        type: "fold_group",
+        id: `item-${entry.id}`,
+        kind: entry.kind,
+        label,
         timestamp: entry.timestamp,
-        body: "",
-        entries: [entry],
-        collapsedEntries: [entry]
+        summary,
+        details,
+        entries: [
+          {
+            id: entry.id,
+            timestamp: entry.timestamp,
+            summary,
+            details
+          }
+        ]
       });
     }
 
@@ -111,51 +149,59 @@ function buildMessageGroups(details: SessionDetails): Array<{
       turnId: turn.id,
       turnLabel: turn.label,
       turnStartedAt: turn.startedAt,
-      groups
+      items
     };
   });
 }
 
-function FoldedInlineEntry({ entry }: { entry: TimelineEntry }) {
+function FoldedDisplayItem({ item }: { item: DisplayItem }) {
   const [expanded, setExpanded] = useState(false);
-  const summary = entry.summary || entry.preview || "无摘要";
-  const details = entry.details || entry.preview || "无详细内容";
+  const entries = item.entries ?? [];
+  const summaryText =
+    entries.length <= 1 ? item.summary : `${entries.length} 条同类记录`;
 
   return (
-    <section className={`inline-fold ${kindClass(entry.kind)}${expanded ? " expanded" : ""}`}>
+    <section className={`inline-fold ${kindClass(item.kind)}${expanded ? " expanded" : ""}`}>
       <button className="inline-fold-toggle" onClick={() => setExpanded((value) => !value)}>
         <div className="inline-fold-head">
-          <span className="inline-fold-label">{foldedLabel(entry)}</span>
-          <span className="inline-fold-summary">{summary}</span>
+          <span className="inline-fold-label">{item.label}</span>
+          {entries.length > 1 ? <span className="inline-fold-count">{entries.length}</span> : null}
+          <span className="inline-fold-summary">{summaryText}</span>
         </div>
         <div className="inline-fold-meta">
-          <span>{formatDateLabel(entry.timestamp)}</span>
+          <span>{formatDateLabel(item.timestamp)}</span>
           <span className="inline-fold-arrow" aria-hidden="true">{expanded ? "⌄" : "›"}</span>
         </div>
       </button>
-      {expanded ? <pre className="inline-fold-details">{details}</pre> : null}
+      {expanded ? (
+        <div className="grouped-fold-details">
+          {entries.map((entry, index) => (
+            <section className="grouped-fold-entry" key={entry.id}>
+              <div className="grouped-fold-entry-meta">
+                <span className="grouped-fold-entry-index">#{index + 1}</span>
+                <span>{formatDateLabel(entry.timestamp)}</span>
+              </div>
+              <div className="grouped-fold-entry-summary">{entry.summary}</div>
+              <pre className="inline-fold-details grouped-fold-entry-body">{entry.details}</pre>
+            </section>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
 
-function ConversationGroup({ group }: { group: TimelineMessageGroup }) {
-  const sideClass = group.kind === "user_message" ? "chat-user" : "chat-assistant";
+function MessageBubble({ item }: { item: DisplayItem }) {
+  const sideClass = item.kind === "user_message" ? "chat-user" : "chat-assistant";
 
   return (
     <article className={`chat-message ${sideClass}`}>
-      <div className={`chat-card ${kindClass(group.kind)}`}>
+      <div className={`chat-card ${kindClass(item.kind)}`}>
         <div className="chat-card-meta">
-          <span className="chat-role">{roleLabel(group)}</span>
-          <span className="chat-time">{formatDateLabel(group.timestamp)}</span>
+          <span className="chat-role">{item.label}</span>
+          <span className="chat-time">{formatDateLabel(item.timestamp)}</span>
         </div>
-        {group.body ? <div className="chat-body">{group.body}</div> : null}
-        {group.collapsedEntries.length > 0 ? (
-          <div className="chat-inline-stack">
-            {group.collapsedEntries.map((entry) => (
-              <FoldedInlineEntry entry={entry} key={entry.id} />
-            ))}
-          </div>
-        ) : null}
+        <div className="chat-body">{item.details}</div>
       </div>
     </article>
   );
@@ -186,7 +232,7 @@ export function TimelineView(props: TimelineViewProps) {
     );
   }
 
-  const groupedTurns = buildMessageGroups(props.details);
+  const groupedTurns = buildDisplayItems(props.details);
 
   return (
     <main className="main-panel">
@@ -211,9 +257,13 @@ export function TimelineView(props: TimelineViewProps) {
               <span>{formatDateLabel(turn.turnStartedAt)}</span>
             </div>
             <div className="turn-stack">
-              {turn.groups.map((group) => (
-                <ConversationGroup group={group} key={group.id} />
-              ))}
+              {turn.items.map((item) =>
+                item.type === "message" ? (
+                  <MessageBubble item={item} key={item.id} />
+                ) : (
+                  <FoldedDisplayItem item={item} key={item.id} />
+                )
+              )}
             </div>
           </section>
         ))}

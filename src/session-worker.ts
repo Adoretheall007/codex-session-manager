@@ -10,8 +10,6 @@ import { clampText } from "./lib/format";
 
 declare const self: DedicatedWorkerGlobalScope;
 
-const MAX_SAFE_FILE_SIZE = 64 * 1024 * 1024;
-
 function postMessageToUi(message: WorkerResponseMessage) {
   self.postMessage(message);
 }
@@ -256,9 +254,6 @@ async function buildSessionSummary(
   handle: FileSystemFileHandle
 ): Promise<SessionSummary> {
   const file = await handle.getFile();
-  if (file.size > MAX_SAFE_FILE_SIZE) {
-    throw new Error(`FILE_TOO_LARGE:${path}`);
-  }
   let firstMeta: any = null;
   let threadTitle = "";
   let firstModel = "";
@@ -333,9 +328,6 @@ async function buildSessionDetails(
   }
   const fileHandle = await cursor.getFileHandle(pathParts.at(-1)!);
   const file = await fileHandle.getFile();
-  if (file.size > MAX_SAFE_FILE_SIZE) {
-    throw new Error(`FILE_TOO_LARGE:${summary.filePath}`);
-  }
 
   const turns = new Map<string, TurnGroup>();
   const carryCallMap = new Map<string, TimelineEntry>();
@@ -419,9 +411,7 @@ self.onmessage = async (event: MessageEvent<WorkerIndexMessage>) => {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "未知 Worker 错误";
-    const normalizedMessage = message.startsWith("FILE_TOO_LARGE:")
-      ? "检测到过大的会话文件，浏览器内解析已中止。请先缩小样本范围后重试。"
-      : message.includes("JSON")
+    const normalizedMessage = message.includes("JSON")
         ? "会话文件解析失败，请检查 JSONL 内容是否完整。"
         : message;
     postMessageToUi({
