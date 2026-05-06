@@ -48,6 +48,16 @@ export async function verifyDirectoryPermission(
   return (await handle.requestPermission(mode)) === "granted";
 }
 
+export async function getDirectoryPermissionState(
+  handle: FileSystemDirectoryHandle
+): Promise<PermissionState | "prompt"> {
+  const mode: FileSystemHandlePermissionDescriptor = { mode: "read" };
+  if (!handle.queryPermission) {
+    return "granted";
+  }
+  return handle.queryPermission(mode);
+}
+
 export async function chooseDirectoryHandle(): Promise<FileSystemDirectoryHandle | null> {
   if (!("showDirectoryPicker" in window)) {
     return null;

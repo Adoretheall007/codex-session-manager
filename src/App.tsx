@@ -5,12 +5,14 @@ import { TimelineView } from "./components/TimelineView";
 import { filterSessions } from "./lib/filter";
 import {
   chooseDirectoryHandle,
+  getDirectoryPermissionState,
   isFileSystemAccessSupported,
   loadDirectoryHandle,
   saveDirectoryHandle,
   verifyDirectoryPermission
 } from "./lib/file-system";
 import type {
+  DirectoryAccessErrorReason,
   IndexProgress,
   SessionDetails,
   SessionFilterState,
@@ -23,6 +25,24 @@ const initialFilters: SessionFilterState = {
   cwdQuery: "",
   onlyLargeFiles: false
 };
+
+function formatDirectoryError(reason: DirectoryAccessErrorReason, fallback?: string) {
+  switch (reason) {
+    case "unsupported_browser":
+      return "当前浏览器不支持目录授权。部署在 Netlify 后仍需使用桌面版 Chrome 或 Edge。";
+    case "permission_denied":
+      return "目录读取权限未授予。请在浏览器弹窗中允许访问，或重新点击“选择 Session 目录”。";
+    case "directory_handle_revoked":
+      return "上次保存的目录句柄已失效，可能是浏览器权限、隐私模式、站点域名或目录内容变化导致。请重新授权目录。";
+    case "parse_failed":
+      return "会话文件读取失败，可能是文件内容损坏或 JSONL 格式不完整。";
+    case "file_too_large":
+      return "检测到过大的会话文件，当前浏览器内解析失败。请先缩小样本范围后重试。";
+    case "unknown":
+    default:
+      return fallback ?? "读取目录失败，请重试。";
+  }
+}
 
 export function App() {
   const workerRef = useRef<Worker | null>(null);
@@ -108,9 +128,14 @@ export function App() {
   );
 
   async function startIndexing(handle: FileSystemDirectoryHandle) {
+    const permissionState = await getDirectoryPermissionState(handle);
+    if (permissionState === "denied") {
+      setError(formatDirectoryError("directory_handle_revoked"));
+      return;
+    }
     const allowed = await verifyDirectoryPermission(handle);
     if (!allowed) {
-      setError("目录读取权限未授予。");
+      setError(formatDirectoryError("permission_denied"));
       return;
     }
     setRootHandle(handle);
@@ -136,7 +161,7 @@ export function App() {
     try {
       const handle = await chooseDirectoryHandle();
       if (!handle) {
-        setError("当前浏览器不支持目录选择。");
+        setError(formatDirectoryError("unsupported_browser"));
         return;
       }
       await startIndexing(handle);
@@ -144,7 +169,11 @@ export function App() {
       if (pickerError instanceof DOMException && pickerError.name === "AbortError") {
         return;
       }
-      setError(pickerError instanceof Error ? pickerError.message : "选择目录失败");
+      setError(
+        pickerError instanceof Error
+          ? formatDirectoryError("unknown", pickerError.message)
+          : formatDirectoryError("unknown", "选择目录失败")
+      );
     }
   }
 
@@ -152,7 +181,17 @@ export function App() {
     if (!restorableHandle) {
       return;
     }
-    await startIndexing(restorableHandle);
+    try {
+      await startIndexing(restorableHandle);
+    } catch (restoreError) {
+      setError(
+        restoreError instanceof DOMException && restoreError.name === "NotFoundError"
+          ? formatDirectoryError("directory_handle_revoked")
+          : restoreError instanceof Error
+            ? formatDirectoryError("unknown", restoreError.message)
+            : formatDirectoryError("directory_handle_revoked")
+      );
+    }
   }
 
   if (!rootHandle) {

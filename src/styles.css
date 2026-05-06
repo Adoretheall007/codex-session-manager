@@ -63,6 +63,16 @@ button {
   color: #c6c8c5;
 }
 
+.helper-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.helper-list p {
+  color: #d8d3c8;
+}
+
 .actions {
   display: flex;
   gap: 12px;

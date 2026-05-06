@@ -96,3 +96,11 @@ export type WorkerResponseMessage =
       type: "workerError";
       payload: string;
     };
+
+export type DirectoryAccessErrorReason =
+  | "unsupported_browser"
+  | "permission_denied"
+  | "directory_handle_revoked"
+  | "parse_failed"
+  | "file_too_large"
+  | "unknown";
