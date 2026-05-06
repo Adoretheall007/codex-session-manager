@@ -365,35 +365,53 @@ button {
   font-size: 14px;
 }
 
-.folded-entry {
-  width: min(860px, 100%);
-  margin: 0 auto;
-  border-radius: 18px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
+.chat-inline-stack {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
 }
 
-.folded-entry-toggle {
+.inline-fold {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+
+.inline-fold-toggle {
   width: 100%;
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  align-items: flex-start;
+  gap: 14px;
   border: 0;
   background: transparent;
   color: inherit;
-  padding: 14px 16px;
+  padding: 12px 14px;
   text-align: left;
 }
 
-.folded-entry-main p {
-  margin: 6px 0 0;
+.inline-fold-head {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.inline-fold-label {
+  color: #eef0ea;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.inline-fold-summary {
   color: #bcc5bf;
+  font-size: 13px;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.folded-entry-meta {
+.inline-fold-meta {
   flex-shrink: 0;
   text-align: right;
   color: #98a6a1;
@@ -402,9 +420,9 @@ button {
   gap: 6px;
 }
 
-.folded-entry-details {
+.inline-fold-details {
   margin: 0;
-  padding: 16px 18px 18px;
+  padding: 14px 16px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(0, 0, 0, 0.22);
   color: #f0efe8;
