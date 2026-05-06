@@ -130,7 +130,7 @@ function FoldedInlineEntry({ entry }: { entry: TimelineEntry }) {
         </div>
         <div className="inline-fold-meta">
           <span>{formatDateLabel(entry.timestamp)}</span>
-          <span>{expanded ? "收起" : "展开"}</span>
+          <span className="inline-fold-arrow" aria-hidden="true">{expanded ? "⌄" : "›"}</span>
         </div>
       </button>
       {expanded ? <pre className="inline-fold-details">{details}</pre> : null}
