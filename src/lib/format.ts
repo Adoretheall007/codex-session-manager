@@ -10,8 +10,22 @@ export function formatCount(value: number): string {
   return new Intl.NumberFormat("zh-CN").format(value);
 }
 
-export function clampText(value: string, length: number): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
+function toDisplayText(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value == null) {
+    return "";
+  }
+  try {
+    return typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+export function clampText(value: unknown, length: number): string {
+  const normalized = toDisplayText(value).replace(/\s+/g, " ").trim();
   if (normalized.length <= length) {
     return normalized;
   }

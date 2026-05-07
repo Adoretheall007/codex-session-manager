@@ -1,6 +1,9 @@
 import type {
+  SessionDetailsUpdate,
+  SessionParseState,
   SessionDetails,
   SessionSummary,
+  SessionTurnPatch,
   TimelineEntry,
   TurnGroup,
   WorkerIndexMessage,
@@ -33,7 +36,7 @@ async function collectJsonlFiles(
 }
 
 async function forEachJsonLine(
-  file: File,
+  file: Blob,
   onLine: (line: string, index: number) => void | Promise<void>
 ): Promise<void> {
   const decoder = new TextDecoder();
@@ -83,7 +86,7 @@ function summarizeMessageContent(payload: any): string {
   return parts.join("\n\n");
 }
 
-function createSummary(path: string, size: number, firstMeta: any, counters: {
+function createSummary(path: string, file: File, firstMeta: any, counters: {
   messageCount: number;
   turnCount: number;
   userMessageCount: number;
@@ -94,22 +97,29 @@ function createSummary(path: string, size: number, firstMeta: any, counters: {
 }): SessionSummary {
   const payload = firstMeta?.payload ?? {};
   const title = payload?.thread_name || payload?.title || path.split("/").at(-1) || "";
+  const fileName = path.split("/").at(-1) ?? path;
+  const cwd = payload?.cwd ?? "";
+  const model = payload?.model ?? payload?.base_instructions?.model ?? "";
+  const id = payload?.id ?? path;
   return {
-    id: payload?.id ?? path,
+    id,
     filePath: path,
-    fileName: path.split("/").at(-1) ?? path,
-    size,
+    fileName,
+    size: file.size,
+    fileLastModified: file.lastModified,
     dateLabel: firstMeta?.timestamp ?? "",
     title,
-    cwd: payload?.cwd ?? "",
-    model: payload?.model ?? payload?.base_instructions?.model ?? "",
+    resume: `codex resume ${id}`,
+    cwd,
+    model,
     messageCount: counters.messageCount,
     turnCount: counters.turnCount,
     userMessageCount: counters.userMessageCount,
     assistantMessageCount: counters.assistantMessageCount,
     toolCallCount: counters.toolCallCount,
     reasoningCount: counters.reasoningCount,
-    lastTimestamp: counters.lastTimestamp
+    lastTimestamp: counters.lastTimestamp,
+    searchText: [fileName, title, cwd, model, id, `codex resume ${id}`].join(" ").toLowerCase()
   };
 }
 
@@ -276,8 +286,19 @@ async function buildSessionSummary(
     if (!firstMeta && raw.type === "session_meta") {
       firstMeta = raw;
     }
-    if (!threadTitle && raw.type === "event_msg" && raw.payload?.type === "thread_name_updated") {
-      threadTitle = raw.payload.thread_name ?? "";
+    if (
+      raw.type === "event_msg" &&
+      (raw.payload?.type === "thread_name_updated" ||
+        raw.payload?.type === "conversation_renamed" ||
+        raw.payload?.type === "conversation_title_updated" ||
+        raw.payload?.type === "forked_conversation_renamed")
+    ) {
+      threadTitle =
+        raw.payload.thread_name ??
+        raw.payload.title ??
+        raw.payload.new_name ??
+        raw.payload.new_title ??
+        threadTitle;
     }
     if (!firstModel && raw.type === "turn_context" && raw.payload?.model) {
       firstModel = raw.payload.model;
@@ -309,7 +330,7 @@ async function buildSessionSummary(
     }
   });
 
-  const summary = createSummary(path, file.size, firstMeta, counters);
+  const summary = createSummary(path, file, firstMeta, counters);
   return {
     ...summary,
     title: threadTitle || summary.title,
@@ -317,17 +338,68 @@ async function buildSessionSummary(
   };
 }
 
-async function buildSessionDetails(
-  summary: SessionSummary,
+function createParseState(turns: TurnGroup[], summary: SessionSummary): SessionParseState {
+  const toolCallNames: Record<string, string> = {};
+
+  for (const turn of turns) {
+    for (const entry of turn.entries) {
+      if (entry.callId && entry.toolName) {
+        toolCallNames[entry.callId] = entry.toolName;
+      }
+    }
+  }
+
+  return {
+    fileSize: summary.size,
+    fileLastModified: summary.fileLastModified,
+    lineCount: turns.reduce((count, turn) => count + turn.entries.length, 0),
+    totalEntries: turns.reduce((count, turn) => count + turn.entries.length, 0),
+    lastTurnId: turns.at(-1)?.id ?? "prelude",
+    turns: turns.map((turn) => ({
+      id: turn.id,
+      label: turn.label,
+      startedAt: turn.startedAt
+    })),
+    toolCallNames
+  };
+}
+
+function createTurnPatch(
+  parseState: SessionParseState,
+  turnsById: Map<string, TurnGroup>
+): SessionTurnPatch[] {
+  return Array.from(turnsById.values()).map((turn) => ({
+    id: turn.id,
+    label: turn.label,
+    startedAt: turn.startedAt,
+    isNewTurn: !parseState.turns.some((item) => item.id === turn.id),
+    entries: turn.entries
+  }));
+}
+
+async function resolveSessionFile(
+  session: SessionSummary,
   sessionsRoot: FileSystemDirectoryHandle
-): Promise<SessionDetails> {
-  const pathParts = summary.filePath.split("/");
+) {
+  const pathParts = session.filePath.split("/");
   let cursor: FileSystemDirectoryHandle = sessionsRoot;
   for (const part of pathParts.slice(0, -1)) {
     cursor = await cursor.getDirectoryHandle(part);
   }
   const fileHandle = await cursor.getFileHandle(pathParts.at(-1)!);
   const file = await fileHandle.getFile();
+
+  return {
+    fileHandle,
+    file
+  };
+}
+
+async function buildSessionDetails(
+  summary: SessionSummary,
+  sessionsRoot: FileSystemDirectoryHandle
+): Promise<SessionDetails> {
+  const { file } = await resolveSessionFile(summary, sessionsRoot);
 
   const turns = new Map<string, TurnGroup>();
   const carryCallMap = new Map<string, TimelineEntry>();
@@ -373,11 +445,171 @@ async function buildSessionDetails(
   return {
     summary,
     turns: orderedTurns,
-    totalEntries: orderedTurns.reduce((acc, turn) => acc + turn.entries.length, 0)
+    totalEntries: orderedTurns.reduce((acc, turn) => acc + turn.entries.length, 0),
+    parseState: createParseState(orderedTurns, summary)
+  };
+}
+
+async function refreshSession(
+  session: SessionSummary,
+  sessionsRoot: FileSystemDirectoryHandle,
+  includeDetails: boolean,
+  detailsState?: SessionParseState
+) {
+  const { fileHandle, file } = await resolveSessionFile(session, sessionsRoot);
+  const summary = await buildSessionSummary(session.filePath, fileHandle);
+  let detailsUpdate: SessionDetailsUpdate | undefined;
+
+  if (includeDetails) {
+    const canAppend =
+      detailsState &&
+      file.size >= detailsState.fileSize &&
+      file.lastModified >= detailsState.fileLastModified;
+
+    if (canAppend) {
+      const appendedBlob = file.slice(detailsState.fileSize);
+      const turnsById = new Map<string, TurnGroup>();
+      const carryCallMap = new Map<string, TimelineEntry>(
+        Object.entries(detailsState.toolCallNames).map(([callId, toolName]) => [
+          callId,
+          {
+            id: `carry-${callId}`,
+            turnId: detailsState.lastTurnId,
+            timestamp: "",
+            kind: "tool_call_group",
+            title: toolName,
+            summary: "",
+            collapsedByDefault: true,
+            preview: "",
+            details: "",
+            rawType: "carry",
+            callId,
+            toolName,
+            lineNumber: 0
+          }
+        ])
+      );
+      let currentTurnId = detailsState.lastTurnId || "prelude";
+      let appendedLineCount = 0;
+
+      await forEachJsonLine(appendedBlob, (line, index) => {
+        const raw = parseJsonLine(line);
+        if (!raw) {
+          return;
+        }
+        appendedLineCount = index;
+        if (raw.type === "turn_context" && raw.payload?.turn_id) {
+          currentTurnId = raw.payload.turn_id;
+          if (!turnsById.has(currentTurnId)) {
+            const existingTurn = detailsState.turns.find((turn) => turn.id === currentTurnId);
+            turnsById.set(currentTurnId, {
+              id: currentTurnId,
+              label: existingTurn?.label ?? `轮次 ${detailsState.turns.length + turnsById.size + 1}`,
+              startedAt: existingTurn?.startedAt ?? raw.timestamp ?? "",
+              entries: []
+            });
+          }
+        }
+
+        if (!turnsById.has(currentTurnId)) {
+          const existingTurn = detailsState.turns.find((turn) => turn.id === currentTurnId);
+          turnsById.set(currentTurnId, {
+            id: currentTurnId,
+            label:
+              existingTurn?.label ??
+              (currentTurnId === "prelude"
+                ? "会话前置信息"
+                : `轮次 ${detailsState.turns.length + turnsById.size + 1}`),
+            startedAt: existingTurn?.startedAt ?? raw.timestamp ?? "",
+            entries: []
+          });
+        }
+
+        const entry = normalizeEntry(
+          raw,
+          detailsState.lineCount + index + 1,
+          currentTurnId,
+          carryCallMap
+        );
+        if (!entry) {
+          return;
+        }
+        turnsById.get(currentTurnId)!.entries.push(entry);
+      });
+
+      const turnPatches = createTurnPatch(detailsState, turnsById).filter(
+        (turn) => turn.entries.length > 0
+      );
+
+      if (turnPatches.length > 0 || appendedLineCount > 0) {
+        const nextParseState: SessionParseState = {
+          fileSize: file.size,
+          fileLastModified: file.lastModified,
+          lineCount: detailsState.lineCount + appendedLineCount,
+          totalEntries:
+            detailsState.totalEntries +
+            turnPatches.reduce((count, turn) => count + turn.entries.length, 0),
+          lastTurnId: currentTurnId,
+          turns: [
+            ...detailsState.turns,
+            ...turnPatches
+              .filter((turn) => turn.isNewTurn)
+              .map((turn) => ({
+                id: turn.id,
+                label: turn.label,
+                startedAt: turn.startedAt
+              }))
+          ],
+          toolCallNames: {
+            ...detailsState.toolCallNames,
+            ...Object.fromEntries(
+              turnPatches
+                .flatMap((turn) => turn.entries)
+                .filter((entry) => entry.callId && entry.toolName)
+                .map((entry) => [entry.callId!, entry.toolName!])
+            )
+          }
+        };
+
+        detailsUpdate = {
+          mode: "append",
+          patch: {
+            totalEntries: nextParseState.totalEntries,
+            parseState: nextParseState,
+            turnPatches
+          }
+        };
+      } else {
+        detailsUpdate = {
+          mode: "append",
+          patch: {
+            totalEntries: detailsState.totalEntries,
+            parseState: {
+              ...detailsState,
+              fileSize: file.size,
+              fileLastModified: file.lastModified
+            },
+            turnPatches: []
+          }
+        };
+      }
+    } else {
+      const details = await buildSessionDetails(summary, sessionsRoot);
+      detailsUpdate = {
+        mode: "replace",
+        details
+      };
+    }
+  }
+
+  return {
+    summary,
+    detailsUpdate
   };
 }
 
 self.onmessage = async (event: MessageEvent<WorkerIndexMessage>) => {
+  const requestId = event.data.requestId;
   try {
     if (event.data.type === "indexDirectory") {
       const files = await collectJsonlFiles(event.data.sessionsRoot);
@@ -386,6 +618,7 @@ self.onmessage = async (event: MessageEvent<WorkerIndexMessage>) => {
         const file = files[index];
         postMessageToUi({
           type: "indexProgress",
+          requestId,
           payload: {
             filesScanned: index,
             totalFiles: files.length,
@@ -397,6 +630,7 @@ self.onmessage = async (event: MessageEvent<WorkerIndexMessage>) => {
       summaries.sort((left, right) => right.lastTimestamp.localeCompare(left.lastTimestamp));
       postMessageToUi({
         type: "indexComplete",
+        requestId,
         payload: summaries
       });
       return;
@@ -406,7 +640,23 @@ self.onmessage = async (event: MessageEvent<WorkerIndexMessage>) => {
       const details = await buildSessionDetails(event.data.session, event.data.sessionsRoot);
       postMessageToUi({
         type: "sessionLoaded",
+        requestId,
         payload: details
+      });
+      return;
+    }
+
+    if (event.data.type === "refreshSession") {
+      const payload = await refreshSession(
+        event.data.session,
+        event.data.sessionsRoot,
+        event.data.includeDetails,
+        event.data.detailsState
+      );
+      postMessageToUi({
+        type: "sessionRefreshed",
+        requestId,
+        payload
       });
     }
   } catch (error) {
@@ -416,6 +666,7 @@ self.onmessage = async (event: MessageEvent<WorkerIndexMessage>) => {
         : message;
     postMessageToUi({
       type: "workerError",
+      requestId,
       payload: normalizedMessage
     });
   }
