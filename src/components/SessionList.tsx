@@ -5,14 +5,22 @@ import type { SessionFilterState, SessionSummary } from "../types";
 type SessionListProps = {
   sessions: SessionSummary[];
   selectedId: string | null;
+  selectedForDeleteIds: Set<string>;
   refreshingSessionId: string | null;
   filters: SessionFilterState;
+  batchDeleteCountdown: number | null;
+  batchDeleteReady: boolean;
+  deletingSessions: boolean;
+  totalSelectedForDelete: number;
   onSelect: (session: SessionSummary) => void;
+  onToggleSessionSelection: (sessionId: string) => void;
+  onClearSelection: () => void;
   onFilterChange: (next: SessionFilterState) => void;
   directoryPath: string;
   directoryStatusText: string;
   onRefresh: () => void;
   onRefreshSession: (session: SessionSummary) => void;
+  onRequestBatchDelete: () => void;
   onPickDirectory: () => void;
 };
 
@@ -54,6 +62,15 @@ export function SessionList(props: SessionListProps) {
       setCopiedSessionId(null);
     }
   }
+
+  const hasBatchSelection = props.totalSelectedForDelete > 0;
+  const batchDeleteLabel = props.deletingSessions
+    ? "删除中..."
+    : props.batchDeleteCountdown != null
+      ? `等待 ${props.batchDeleteCountdown}s`
+      : props.batchDeleteReady
+        ? `确认删除 ${props.totalSelectedForDelete} 项`
+        : `批量删除 ${props.totalSelectedForDelete} 项`;
 
   return (
     <aside className="sidebar">
@@ -146,18 +163,51 @@ export function SessionList(props: SessionListProps) {
             </span>
           </label>
         </div>
+        {hasBatchSelection ? (
+          <div className="batch-delete-bar">
+            <div className="batch-delete-copy">
+              <strong>已选择 {props.totalSelectedForDelete} 个会话</strong>
+              <small>
+                {props.batchDeleteReady
+                  ? "倒计时结束，再次点击确认删除"
+                  : props.batchDeleteCountdown != null
+                    ? "删除确认倒计时中"
+                    : "删除的是本地 JSONL 文件"}
+              </small>
+            </div>
+            <div className="batch-delete-actions">
+              <button
+                className="danger-button"
+                disabled={props.deletingSessions || props.batchDeleteCountdown != null}
+                onClick={props.onRequestBatchDelete}
+                type="button"
+              >
+                {batchDeleteLabel}
+              </button>
+              <button
+                className="secondary-button batch-clear-button"
+                disabled={props.deletingSessions}
+                onClick={props.onClearSelection}
+                type="button"
+              >
+                清空
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="session-list">
         {props.sessions.map((session) => {
           const selected = session.id === props.selectedId;
+          const selectedForDelete = props.selectedForDeleteIds.has(session.id);
           const copied = copiedSessionId === session.id;
           const refreshing = props.refreshingSessionId === session.id;
 
           return (
             <article
               aria-selected={selected}
-              className={`session-card${selected ? " selected" : ""}`}
+              className={`session-card${selected ? " selected" : ""}${selectedForDelete ? " marked-for-delete" : ""}`}
               key={session.id}
               onClick={() => props.onSelect(session)}
               onKeyDown={(event) => {
@@ -170,6 +220,19 @@ export function SessionList(props: SessionListProps) {
               tabIndex={0}
             >
               <div className="session-card-top">
+                <button
+                  aria-label={`${selectedForDelete ? "取消选择" : "选择"}会话 ${session.title || session.fileName}`}
+                  aria-pressed={selectedForDelete}
+                  className={`session-select-button${selectedForDelete ? " checked" : ""}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    props.onToggleSessionSelection(session.id);
+                  }}
+                  title={selectedForDelete ? "取消批量删除选择" : "选择用于批量删除"}
+                  type="button"
+                >
+                  {selectedForDelete ? "✓" : ""}
+                </button>
                 <strong title={session.title || session.fileName}>{session.title || session.fileName}</strong>
                 <div className="session-card-actions">
                   <span>{formatFileSize(session.size)}</span>

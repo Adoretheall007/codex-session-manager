@@ -15,6 +15,30 @@ interface FileSystemHandle {
   ): Promise<PermissionState>;
 }
 
+interface FileSystemRemoveOptions {
+  recursive?: boolean;
+}
+
+interface FileSystemFileHandle extends FileSystemHandle {
+  readonly kind: "file";
+}
+
+interface FileSystemDirectoryHandle extends FileSystemHandle {
+  readonly kind: "directory";
+  entries(): AsyncIterableIterator<
+    [string, FileSystemDirectoryHandle | FileSystemFileHandle]
+  >;
+  getDirectoryHandle(
+    name: string,
+    options?: { create?: boolean }
+  ): Promise<FileSystemDirectoryHandle>;
+  getFileHandle(
+    name: string,
+    options?: { create?: boolean }
+  ): Promise<FileSystemFileHandle>;
+  removeEntry(name: string, options?: FileSystemRemoveOptions): Promise<void>;
+}
+
 interface Window {
   showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
 }

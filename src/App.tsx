@@ -11,7 +11,8 @@ import {
   loadDirectoryHandle,
   saveDirectoryAbsolutePath,
   saveDirectoryHandle,
-  verifyDirectoryPermission
+  verifyDirectoryPermission,
+  verifyDirectoryWritePermission
 } from "./lib/file-system";
 import type {
   DirectoryAccessErrorReason,
@@ -35,6 +36,7 @@ const SIDEBAR_WIDTH_STORAGE_KEY = "codex-session-manager.sidebar-width";
 const DEFAULT_SIDEBAR_WIDTH = 330;
 const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = 520;
+const DELETE_CONFIRM_SECONDS = 3;
 
 function getSidebarWidthMax(viewportWidth: number) {
   return Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, viewportWidth - 420));
@@ -142,6 +144,25 @@ function mergeDetailsUpdate(
   };
 }
 
+async function deleteSessionFile(
+  root: FileSystemDirectoryHandle,
+  session: SessionSummary
+): Promise<void> {
+  const pathParts = session.filePath.split("/").filter(Boolean);
+  const fileName = pathParts.at(-1);
+
+  if (!fileName) {
+    throw new Error(`无效的会话文件路径：${session.filePath}`);
+  }
+
+  let cursor = root;
+  for (const part of pathParts.slice(0, -1)) {
+    cursor = await cursor.getDirectoryHandle(part);
+  }
+
+  await cursor.removeEntry(fileName);
+}
+
 export function App() {
   const workerRef = useRef<Worker | null>(null);
   const selectionPinnedRef = useRef(false);
@@ -164,6 +185,10 @@ export function App() {
   const [sidebarWidth, setSidebarWidth] = useState(loadStoredSidebarWidth);
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [refreshingSessionId, setRefreshingSessionId] = useState<string | null>(null);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(() => new Set());
+  const [deleteCountdown, setDeleteCountdown] = useState<number | null>(null);
+  const [deleteReady, setDeleteReady] = useState(false);
+  const [deletingSessions, setDeletingSessions] = useState(false);
   const sidebarScale = useMemo(
     () => Number((sidebarWidth / DEFAULT_SIDEBAR_WIDTH).toFixed(3)),
     [sidebarWidth]
@@ -336,6 +361,29 @@ export function App() {
   }, [isSidebarResizing]);
 
   useEffect(() => {
+    setDeleteCountdown(null);
+    setDeleteReady(false);
+  }, [selectedSessionIds]);
+
+  useEffect(() => {
+    if (deleteCountdown == null) {
+      return;
+    }
+
+    if (deleteCountdown <= 0) {
+      setDeleteCountdown(null);
+      setDeleteReady(true);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setDeleteCountdown((current) => (current == null ? null : current - 1));
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [deleteCountdown]);
+
+  useEffect(() => {
     if (!selectedSession || !rootHandle || !workerRef.current) {
       return;
     }
@@ -377,6 +425,9 @@ export function App() {
     setRootHandle(handle);
     setRestorableHandle(handle);
     setSessions([]);
+    setSelectedSessionIds(new Set());
+    setDeleteCountdown(null);
+    setDeleteReady(false);
     setSelectedDetails(null);
     setSelectedSession(null);
     setBusy(true);
@@ -455,6 +506,112 @@ export function App() {
     },
     [rootHandle, selectedDetails, selectedSession]
   );
+
+  const handleToggleSessionSelection = useCallback((sessionId: string) => {
+    setSelectedSessionIds((current) => {
+      const next = new Set(current);
+      if (next.has(sessionId)) {
+        next.delete(sessionId);
+      } else {
+        next.add(sessionId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearSessionSelection = useCallback(() => {
+    setSelectedSessionIds(new Set());
+  }, []);
+
+  const handleRequestBatchDelete = useCallback(async () => {
+    if (!rootHandle || deletingSessions || selectedSessionIds.size === 0) {
+      return;
+    }
+
+    if (!deleteReady) {
+      setDeleteCountdown(DELETE_CONFIRM_SECONDS);
+      return;
+    }
+
+    const targets = sessions.filter((session) => selectedSessionIds.has(session.id));
+    if (targets.length === 0) {
+      setSelectedSessionIds(new Set());
+      setDeleteReady(false);
+      return;
+    }
+
+    try {
+      const allowed = await verifyDirectoryWritePermission(rootHandle);
+      if (!allowed) {
+        setError("目录写入权限未授予，无法删除本地会话文件。请在浏览器弹窗中允许写入权限后重试。");
+        setDeleteReady(false);
+        setDeleteCountdown(null);
+        return;
+      }
+
+      setDeletingSessions(true);
+      setError(null);
+
+      const deletedSessions: SessionSummary[] = [];
+      const failedSessions: Array<{ session: SessionSummary; reason: string }> = [];
+
+      for (const session of targets) {
+        try {
+          await deleteSessionFile(rootHandle, session);
+          deletedSessions.push(session);
+        } catch (deleteError) {
+          failedSessions.push({
+            session,
+            reason: deleteError instanceof Error ? deleteError.message : "未知删除错误"
+          });
+        }
+      }
+
+      const deletedIds = new Set(deletedSessions.map((session) => session.id));
+      const failedIds = new Set(failedSessions.map((item) => item.session.id));
+      const remainingSessions = sessions.filter((session) => !deletedIds.has(session.id));
+
+      setSessions(remainingSessions);
+      setSelectedSessionIds(failedIds);
+      setDeleteReady(false);
+      setDeleteCountdown(null);
+
+      if (selectedSession && deletedIds.has(selectedSession.id)) {
+        activeLoadRequestIdRef.current += 1;
+        setSelectedSession(remainingSessions[0] ?? null);
+        setSelectedDetails(null);
+        setLoadingSession(false);
+      } else {
+        setSelectedDetails((current) =>
+          current && deletedIds.has(current.summary.id) ? null : current
+        );
+      }
+
+      if (refreshingSessionId && deletedIds.has(refreshingSessionId)) {
+        setRefreshingSessionId(null);
+      }
+
+      if (failedSessions.length > 0) {
+        const failedNames = failedSessions
+          .slice(0, 3)
+          .map((item) => item.session.title || item.session.fileName)
+          .join("、");
+        setError(
+          `已删除 ${deletedSessions.length} 个会话，${failedSessions.length} 个删除失败：${failedNames}`
+        );
+      }
+    } finally {
+      setDeletingSessions(false);
+    }
+  }, [
+    deleteReady,
+    deletingSessions,
+    refreshingSessionId,
+    rootHandle,
+    selectedSession,
+    selectedSessionIds,
+    sessions
+  ]);
 
   const handleFilterChange = useCallback((next: SessionFilterState) => {
     setFilters(next);
@@ -553,13 +710,21 @@ export function App() {
             : "已完成索引"
         }
         refreshingSessionId={refreshingSessionId}
+        selectedForDeleteIds={selectedSessionIds}
         selectedId={selectedSession?.id ?? null}
         sessions={visibleSessions}
+        batchDeleteCountdown={deleteCountdown}
+        batchDeleteReady={deleteReady}
+        deletingSessions={deletingSessions}
+        totalSelectedForDelete={selectedSessionIds.size}
+        onClearSelection={handleClearSessionSelection}
         onPickDirectory={handlePickDirectory}
         onRefresh={handleRefresh}
         onRefreshSession={handleRefreshSession}
+        onRequestBatchDelete={handleRequestBatchDelete}
         onFilterChange={handleFilterChange}
         onSelect={handleSelectSession}
+        onToggleSessionSelection={handleToggleSessionSelection}
       />
       <div
         aria-hidden="true"

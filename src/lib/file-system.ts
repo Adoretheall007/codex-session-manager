@@ -69,6 +69,19 @@ export async function verifyDirectoryPermission(
   return (await handle.requestPermission(mode)) === "granted";
 }
 
+export async function verifyDirectoryWritePermission(
+  handle: FileSystemDirectoryHandle
+): Promise<boolean> {
+  const mode: FileSystemHandlePermissionDescriptor = { mode: "readwrite" };
+  if (!handle.queryPermission || !handle.requestPermission) {
+    return true;
+  }
+  if ((await handle.queryPermission(mode)) === "granted") {
+    return true;
+  }
+  return (await handle.requestPermission(mode)) === "granted";
+}
+
 export async function getDirectoryPermissionState(
   handle: FileSystemDirectoryHandle
 ): Promise<PermissionState | "prompt"> {

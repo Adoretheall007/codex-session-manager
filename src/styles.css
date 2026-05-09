@@ -184,6 +184,39 @@ body::-webkit-scrollbar-thumb:hover,
   background: rgba(255, 255, 255, 0.07);
 }
 
+.danger-button {
+  border: 1px solid rgba(248, 113, 113, 0.76);
+  border-radius: 999px;
+  padding: calc(6px * var(--sidebar-scale)) calc(10px * var(--sidebar-scale));
+  background:
+    linear-gradient(135deg, #ef4444, #b91c1c);
+  color: #fff7f7;
+  font-size: calc(10px * var(--sidebar-scale));
+  font-weight: 800;
+  box-shadow:
+    0 10px 24px rgba(185, 28, 28, 0.32),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  transition:
+    border-color 160ms ease,
+    filter 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.danger-button:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow:
+    0 14px 30px rgba(185, 28, 28, 0.42),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.danger-button:disabled {
+  cursor: default;
+  opacity: 0.74;
+  filter: saturate(0.9);
+}
+
 .error-text {
   color: #f7a583;
   margin-top: 16px;
@@ -374,6 +407,55 @@ body::-webkit-scrollbar-thumb:hover,
   gap: calc(4px * var(--sidebar-scale));
 }
 
+.batch-delete-bar {
+  display: grid;
+  gap: calc(6px * var(--sidebar-scale));
+  padding: calc(8px * var(--sidebar-scale));
+  border: 1px solid rgba(248, 113, 113, 0.34);
+  border-radius: calc(12px * var(--sidebar-scale));
+  background:
+    linear-gradient(135deg, rgba(127, 29, 29, 0.48), rgba(69, 10, 10, 0.28));
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.08);
+}
+
+.batch-delete-copy {
+  min-width: 0;
+  display: grid;
+  gap: max(1px, calc(1px * var(--sidebar-scale)));
+}
+
+.batch-delete-copy strong,
+.batch-delete-copy small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.batch-delete-copy strong {
+  color: #fee2e2;
+  font-size: calc(11px * var(--sidebar-scale));
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.batch-delete-copy small {
+  color: #fecaca;
+  font-size: calc(9px * var(--sidebar-scale));
+  line-height: 1.2;
+}
+
+.batch-delete-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: calc(5px * var(--sidebar-scale));
+}
+
+.batch-clear-button {
+  padding: calc(5px * var(--sidebar-scale)) calc(9px * var(--sidebar-scale));
+  font-size: calc(10px * var(--sidebar-scale));
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;
@@ -552,6 +634,15 @@ body::-webkit-scrollbar-thumb:hover,
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
+.session-card.marked-for-delete {
+  border-color: rgba(248, 113, 113, 0.58);
+  background:
+    linear-gradient(135deg, rgba(127, 29, 29, 0.34), rgba(255, 255, 255, 0.025));
+  box-shadow:
+    inset 0 0 0 1px rgba(248, 113, 113, 0.12),
+    0 10px 26px rgba(127, 29, 29, 0.16);
+}
+
 .session-card:focus-visible {
   outline: 2px solid rgba(96, 165, 250, 0.7);
   outline-offset: 2px;
@@ -559,8 +650,9 @@ body::-webkit-scrollbar-thumb:hover,
 
 .session-card-top {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: calc(12px * var(--sidebar-scale));
+  gap: calc(7px * var(--sidebar-scale));
 }
 
 .session-card-actions {
@@ -572,6 +664,11 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .session-card-top strong {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: calc(13px * var(--sidebar-scale));
 }
 
@@ -627,6 +724,40 @@ body::-webkit-scrollbar-thumb:hover,
   background: rgba(255, 255, 255, 0.04);
   color: #e5e7eb;
   font-size: calc(11px * var(--sidebar-scale));
+}
+
+.session-select-button {
+  width: calc(20px * var(--sidebar-scale));
+  height: calc(20px * var(--sidebar-scale));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: calc(7px * var(--sidebar-scale));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.035);
+  color: #fff7f7;
+  font-size: calc(12px * var(--sidebar-scale));
+  font-weight: 900;
+  line-height: 1;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.session-select-button:hover {
+  border-color: rgba(248, 113, 113, 0.52);
+  background: rgba(248, 113, 113, 0.12);
+  transform: translateY(-1px);
+}
+
+.session-select-button.checked {
+  border-color: rgba(248, 113, 113, 0.8);
+  background: #dc2626;
+  box-shadow: 0 8px 18px rgba(220, 38, 38, 0.28);
 }
 
 .session-icon-button {
