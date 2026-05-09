@@ -485,7 +485,7 @@ export function App() {
         return;
       }
       const absolutePath = prompt(
-        "请输入当前选择目录的绝对路径，用于界面展示。例如：F:\\codex\\sessions",
+        "请输入当前选择目录的绝对路径，用于界面展示。建议选择 .codex 根目录，例如：C:\\Users\\你的用户名\\.codex",
         rootPath || handle.name
       );
       await startIndexing(handle, absolutePath?.trim() || handle.name);

@@ -28,7 +28,7 @@ async function collectJsonlFiles(
       files.push(...(await collectJsonlFiles(handle, nextPath)));
       continue;
     }
-    if (name.endsWith(".jsonl")) {
+    if (name.startsWith("rollout-") && name.endsWith(".jsonl")) {
       files.push({ path: nextPath, handle });
     }
   }
@@ -86,6 +86,72 @@ function summarizeMessageContent(payload: any): string {
   return parts.join("\n\n");
 }
 
+type SessionIndexEntry = {
+  threadName: string;
+  updatedAt: string;
+};
+
+function getSummaryTitle(summary: {
+  fileName: string;
+  fallbackTitle: string;
+  firstUserMessage: string;
+  indexedTitle?: string;
+  legacyTitle: string;
+}): string {
+  return (
+    summary.indexedTitle ||
+    summary.legacyTitle ||
+    summary.fallbackTitle ||
+    clampText(summary.firstUserMessage, 48) ||
+    summary.fileName
+  );
+}
+
+function getTitleCandidateFromPayload(payload: any): string {
+  return (
+    payload?.thread_name ??
+    payload?.title ??
+    payload?.new_name ??
+    payload?.new_title ??
+    payload?.name ??
+    ""
+  );
+}
+
+async function readSessionIndex(
+  root: FileSystemDirectoryHandle
+): Promise<Map<string, SessionIndexEntry>> {
+  const titleBySessionId = new Map<string, SessionIndexEntry>();
+
+  try {
+    const indexHandle = await root.getFileHandle("session_index.jsonl");
+    const indexFile = await indexHandle.getFile();
+
+    await forEachJsonLine(indexFile, (line) => {
+      const raw = parseJsonLine(line);
+      const id = raw?.id;
+      const threadName = raw?.thread_name;
+      const updatedAt = raw?.updated_at ?? "";
+
+      if (typeof id !== "string" || typeof threadName !== "string" || !threadName.trim()) {
+        return;
+      }
+
+      const current = titleBySessionId.get(id);
+      if (!current || updatedAt.localeCompare(current.updatedAt) >= 0) {
+        titleBySessionId.set(id, {
+          threadName: threadName.trim(),
+          updatedAt
+        });
+      }
+    });
+  } catch {
+    return titleBySessionId;
+  }
+
+  return titleBySessionId;
+}
+
 function createSummary(path: string, file: File, firstMeta: any, counters: {
   messageCount: number;
   turnCount: number;
@@ -94,13 +160,23 @@ function createSummary(path: string, file: File, firstMeta: any, counters: {
   toolCallCount: number;
   reasoningCount: number;
   lastTimestamp: string;
+  firstUserMessage: string;
+  indexedTitle?: string;
+  legacyTitle: string;
 }): SessionSummary {
   const payload = firstMeta?.payload ?? {};
-  const title = payload?.thread_name || payload?.title || path.split("/").at(-1) || "";
   const fileName = path.split("/").at(-1) ?? path;
   const cwd = payload?.cwd ?? "";
   const model = payload?.model ?? payload?.base_instructions?.model ?? "";
   const id = payload?.id ?? path;
+  const title = getSummaryTitle({
+    fileName,
+    fallbackTitle: payload?.thread_name || payload?.title || "",
+    firstUserMessage: counters.firstUserMessage,
+    indexedTitle: counters.indexedTitle,
+    legacyTitle: counters.legacyTitle
+  });
+
   return {
     id,
     filePath: path,
@@ -261,11 +337,11 @@ function normalizeEntry(
 
 async function buildSessionSummary(
   path: string,
-  handle: FileSystemFileHandle
+  handle: FileSystemFileHandle,
+  titleBySessionId = new Map<string, SessionIndexEntry>()
 ): Promise<SessionSummary> {
   const file = await handle.getFile();
   let firstMeta: any = null;
-  let threadTitle = "";
   let firstModel = "";
   const counters = {
     messageCount: 0,
@@ -274,7 +350,10 @@ async function buildSessionSummary(
     assistantMessageCount: 0,
     toolCallCount: 0,
     reasoningCount: 0,
-    lastTimestamp: ""
+    lastTimestamp: "",
+    firstUserMessage: "",
+    indexedTitle: "",
+    legacyTitle: ""
   };
 
   await forEachJsonLine(file, (line) => {
@@ -285,6 +364,10 @@ async function buildSessionSummary(
     counters.lastTimestamp = raw.timestamp ?? counters.lastTimestamp;
     if (!firstMeta && raw.type === "session_meta") {
       firstMeta = raw;
+      const indexedTitle = titleBySessionId.get(raw.payload?.id)?.threadName;
+      if (indexedTitle) {
+        counters.indexedTitle = indexedTitle;
+      }
     }
     if (
       raw.type === "event_msg" &&
@@ -293,12 +376,10 @@ async function buildSessionSummary(
         raw.payload?.type === "conversation_title_updated" ||
         raw.payload?.type === "forked_conversation_renamed")
     ) {
-      threadTitle =
-        raw.payload.thread_name ??
-        raw.payload.title ??
-        raw.payload.new_name ??
-        raw.payload.new_title ??
-        threadTitle;
+      counters.legacyTitle = getTitleCandidateFromPayload(raw.payload) || counters.legacyTitle;
+    }
+    if (raw.type === "event_msg" && raw.payload?.type === "user_message" && !counters.firstUserMessage) {
+      counters.firstUserMessage = raw.payload.message ?? "";
     }
     if (!firstModel && raw.type === "turn_context" && raw.payload?.model) {
       firstModel = raw.payload.model;
@@ -315,6 +396,9 @@ async function buildSessionSummary(
       counters.messageCount += 1;
       if (payload.role === "user") {
         counters.userMessageCount += 1;
+        if (!counters.firstUserMessage) {
+          counters.firstUserMessage = summarizeMessageContent(payload);
+        }
       }
       if (payload.role === "assistant") {
         counters.assistantMessageCount += 1;
@@ -333,7 +417,6 @@ async function buildSessionSummary(
   const summary = createSummary(path, file, firstMeta, counters);
   return {
     ...summary,
-    title: threadTitle || summary.title,
     model: firstModel || summary.model
   };
 }
@@ -457,7 +540,8 @@ async function refreshSession(
   detailsState?: SessionParseState
 ) {
   const { fileHandle, file } = await resolveSessionFile(session, sessionsRoot);
-  const summary = await buildSessionSummary(session.filePath, fileHandle);
+  const titleBySessionId = await readSessionIndex(sessionsRoot);
+  const summary = await buildSessionSummary(session.filePath, fileHandle, titleBySessionId);
   let detailsUpdate: SessionDetailsUpdate | undefined;
 
   if (includeDetails) {
@@ -612,6 +696,7 @@ self.onmessage = async (event: MessageEvent<WorkerIndexMessage>) => {
   const requestId = event.data.requestId;
   try {
     if (event.data.type === "indexDirectory") {
+      const titleBySessionId = await readSessionIndex(event.data.sessionsRoot);
       const files = await collectJsonlFiles(event.data.sessionsRoot);
       const summaries: SessionSummary[] = [];
       for (let index = 0; index < files.length; index += 1) {
@@ -625,7 +710,7 @@ self.onmessage = async (event: MessageEvent<WorkerIndexMessage>) => {
             currentFile: file.path
           }
         });
-        summaries.push(await buildSessionSummary(file.path, file.handle));
+        summaries.push(await buildSessionSummary(file.path, file.handle, titleBySessionId));
       }
       summaries.sort((left, right) => right.lastTimestamp.localeCompare(left.lastTimestamp));
       postMessageToUi({
