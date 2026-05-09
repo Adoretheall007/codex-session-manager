@@ -86,6 +86,15 @@ function summarizeMessageContent(payload: any): string {
   return parts.join("\n\n");
 }
 
+function extractGoalObjectiveText(text: string): string {
+  if (!text.includes("The objective below is user-provided data")) {
+    return "";
+  }
+
+  const match = text.match(/<untrusted_objective>\s*([\s\S]*?)\s*<\/untrusted_objective>/);
+  return match?.[1]?.trim() ?? "";
+}
+
 type SessionIndexEntry = {
   threadName: string;
   updatedAt: string;
@@ -204,7 +213,7 @@ function normalizeEntry(
   lineNumber: number,
   turnId: string,
   carryCallMap: Map<string, TimelineEntry>
-): TimelineEntry | null {
+): TimelineEntry[] {
   const timestamp = raw?.timestamp ?? "";
   const type = raw?.type ?? "unknown";
 
@@ -213,13 +222,48 @@ function normalizeEntry(
     if (payload.type === "message") {
       const content = summarizeMessageContent(payload);
       const role = payload.role ?? "unknown";
+      const goalObjective = role === "developer" ? extractGoalObjectiveText(content) : "";
+
+      if (goalObjective) {
+        return [
+          {
+            id: `${turnId}-${lineNumber}-${payload.type}-goal-user`,
+            turnId,
+            timestamp,
+            kind: "user_message",
+            role: "user",
+            title: "用户消息",
+            summary: clampText(goalObjective, 120) || "空消息",
+            collapsedByDefault: false,
+            preview: clampText(goalObjective, 220),
+            details: goalObjective,
+            rawType: "developer_goal_objective",
+            lineNumber
+          },
+          {
+            id: `${turnId}-${lineNumber}-${payload.type}-goal-wrapper`,
+            turnId,
+            timestamp,
+            kind: "meta",
+            role,
+            title: "/goal 包装信息",
+            summary: clampText(content, 120) || "无摘要",
+            collapsedByDefault: true,
+            preview: clampText(content, 220),
+            details: content,
+            rawType: "developer_goal_wrapper",
+            lineNumber
+          }
+        ];
+      }
+
       const kind =
         role === "user"
           ? "user_message"
           : role === "assistant"
             ? "assistant_message"
             : "system_message";
-      return {
+      return [{
         id: `${turnId}-${lineNumber}-${payload.type}-${role}`,
         turnId,
         timestamp,
@@ -232,7 +276,7 @@ function normalizeEntry(
         details: content,
         rawType: payload.type,
         lineNumber
-      };
+      }];
     }
 
     if (payload.type === "function_call" || payload.type === "custom_tool_call") {
@@ -255,13 +299,13 @@ function normalizeEntry(
       if (payload.call_id) {
         carryCallMap.set(payload.call_id, entry);
       }
-      return entry;
+      return [entry];
     }
 
     if (payload.type === "function_call_output" || payload.type === "custom_tool_call_output") {
       const details = payload.output ?? "";
       const sourceCall = payload.call_id ? carryCallMap.get(payload.call_id) : null;
-      return {
+      return [{
         id: `${turnId}-${lineNumber}-output-${payload.call_id ?? "unknown"}`,
         turnId,
         timestamp,
@@ -275,7 +319,7 @@ function normalizeEntry(
         callId: payload.call_id,
         toolName: sourceCall?.toolName,
         lineNumber
-      };
+      }];
     }
 
     if (payload.type === "reasoning") {
@@ -284,7 +328,7 @@ function normalizeEntry(
         : payload.encrypted_content
           ? "该 reasoning 内容已加密，仅展示占位。"
           : "无 reasoning 内容";
-      return {
+      return [{
         id: `${turnId}-${lineNumber}-reasoning`,
         turnId,
         timestamp,
@@ -296,12 +340,12 @@ function normalizeEntry(
         details,
         rawType: payload.type,
         lineNumber
-      };
+      }];
     }
   }
 
   if (type === "turn_context") {
-    return {
+    return [{
       id: `${turnId}-${lineNumber}-turn-context`,
       turnId,
       timestamp,
@@ -313,11 +357,11 @@ function normalizeEntry(
       details: JSON.stringify(raw.payload ?? {}, null, 2),
       rawType: type,
       lineNumber
-    };
+    }];
   }
 
   if (type === "event_msg" || type === "compacted" || type === "session_meta") {
-    return {
+    return [{
       id: `${turnId}-${lineNumber}-${type}`,
       turnId,
       timestamp,
@@ -329,10 +373,10 @@ function normalizeEntry(
       details: JSON.stringify(raw.payload ?? {}, null, 2),
       rawType: type,
       lineNumber
-    };
+    }];
   }
 
-  return null;
+  return [];
 }
 
 async function buildSessionSummary(
@@ -393,11 +437,14 @@ async function buildSessionSummary(
     }
     const payload = raw.payload ?? {};
     if (payload.type === "message") {
+      const content = summarizeMessageContent(payload);
+      const goalObjective =
+        payload.role === "developer" ? extractGoalObjectiveText(content) : "";
       counters.messageCount += 1;
-      if (payload.role === "user") {
+      if (payload.role === "user" || goalObjective) {
         counters.userMessageCount += 1;
         if (!counters.firstUserMessage) {
-          counters.firstUserMessage = summarizeMessageContent(payload);
+          counters.firstUserMessage = goalObjective || content;
         }
       }
       if (payload.role === "assistant") {
@@ -514,11 +561,11 @@ async function buildSessionDetails(
       });
     }
 
-    const entry = normalizeEntry(raw, index + 1, currentTurnId, carryCallMap);
-    if (!entry) {
+    const entries = normalizeEntry(raw, index + 1, currentTurnId, carryCallMap);
+    if (entries.length === 0) {
       return;
     }
-    turns.get(currentTurnId)!.entries.push(entry);
+    turns.get(currentTurnId)!.entries.push(...entries);
   });
 
   const orderedTurns = Array.from(turns.values()).sort((left, right) =>
@@ -609,16 +656,16 @@ async function refreshSession(
           });
         }
 
-        const entry = normalizeEntry(
+        const entries = normalizeEntry(
           raw,
           detailsState.lineCount + index + 1,
           currentTurnId,
           carryCallMap
         );
-        if (!entry) {
+        if (entries.length === 0) {
           return;
         }
-        turnsById.get(currentTurnId)!.entries.push(entry);
+        turnsById.get(currentTurnId)!.entries.push(...entries);
       });
 
       const turnPatches = createTurnPatch(detailsState, turnsById).filter(
