@@ -95,6 +95,10 @@ function extractGoalObjectiveText(text: string): string {
   return match?.[1]?.trim() ?? "";
 }
 
+function formatGoalUserMessage(objective: string): string {
+  return objective ? `/goal ${objective}` : "";
+}
+
 type SessionIndexEntry = {
   threadName: string;
   updatedAt: string;
@@ -223,8 +227,9 @@ function normalizeEntry(
       const content = summarizeMessageContent(payload);
       const role = payload.role ?? "unknown";
       const goalObjective = role === "developer" ? extractGoalObjectiveText(content) : "";
+      const goalUserMessage = formatGoalUserMessage(goalObjective);
 
-      if (goalObjective) {
+      if (goalUserMessage) {
         return [
           {
             id: `${turnId}-${lineNumber}-${payload.type}-goal-user`,
@@ -233,10 +238,10 @@ function normalizeEntry(
             kind: "user_message",
             role: "user",
             title: "用户消息",
-            summary: clampText(goalObjective, 120) || "空消息",
+            summary: clampText(goalUserMessage, 120) || "空消息",
             collapsedByDefault: false,
-            preview: clampText(goalObjective, 220),
-            details: goalObjective,
+            preview: clampText(goalUserMessage, 220),
+            details: goalUserMessage,
             rawType: "developer_goal_objective",
             lineNumber
           },
@@ -440,11 +445,12 @@ async function buildSessionSummary(
       const content = summarizeMessageContent(payload);
       const goalObjective =
         payload.role === "developer" ? extractGoalObjectiveText(content) : "";
+      const goalUserMessage = formatGoalUserMessage(goalObjective);
       counters.messageCount += 1;
-      if (payload.role === "user" || goalObjective) {
+      if (payload.role === "user" || goalUserMessage) {
         counters.userMessageCount += 1;
         if (!counters.firstUserMessage) {
-          counters.firstUserMessage = goalObjective || content;
+          counters.firstUserMessage = goalUserMessage || content;
         }
       }
       if (payload.role === "assistant") {
